@@ -9,6 +9,7 @@ project("myapplication")
 # one used for loading in your Kotlin/Java or AndroidManifest.txt files.
 add_library(myapplication SHARED
         main.cpp
+        Renderer.cpp
      )
 
 # Searches for a package provided by the game activity dependency

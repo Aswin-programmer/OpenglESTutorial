@@ -1,7 +1,8 @@
 #include <game-activity/GameActivity.cpp>
 #include <game-text-input/gametextinput.cpp>
 
-#include "android/log.h"
+#include "Logger.h"
+#include "Renderer.h"
 
 extern "C"
 {
@@ -11,15 +12,25 @@ extern "C"
     {
         switch (cmd) {
             case APP_CMD_INIT_WINDOW:
-                __android_log_print(ANDROID_LOG_INFO, "LOG", "Initializing the window");
+                LOG_INFO("Initialing the window");
+                app->userData = new Renderer(app);
                 break;
 
             case APP_CMD_TERM_WINDOW:
-                __android_log_print(ANDROID_LOG_INFO, "LOG", "Terminating the window");
+            {
+                LOG_INFO("Terminating the window");
+                auto *renderer = (Renderer*)app->userData;
+                if(renderer)
+                {
+                    delete renderer;
+                }
                 break;
+            }
 
             default:
+            {
                 break;
+            }
         }
     }
 
@@ -31,7 +42,7 @@ extern "C"
         int events;
 
         do{
-            while(ALooper_pollOnce(0, nullptr, &events, (void**)&pollSource))
+            if(ALooper_pollOnce(0, nullptr, &events, (void**)&pollSource) >= 0)
             {
                 if(pollSource)
                 {
@@ -39,11 +50,9 @@ extern "C"
                 }
             }
 
-            // Update our game
-
-            // Render our game
-
-            // ...
+            if(!app->userData) continue;
+            Renderer* renderer = (Renderer *)app->userData;
+            renderer->Do_Frame();
 
         } while(!app->destroyRequested);
     }
