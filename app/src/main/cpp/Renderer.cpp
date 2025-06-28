@@ -4,6 +4,34 @@
 #include "Renderer.h"
 #include <GLES3/gl3.h>
 
+constexpr auto VERT_CODE = R"(
+#version 300 es
+precision mediump float;
+layout (location = 0) in vec2 aPos;
+layout (location = 1) in vec3 aColor;
+
+out vec4 color;
+
+void main()
+{
+    gl_Position = vec4(aPos, 0.0, 1.0f);
+    color = vec4(aColor, 1.0);
+}
+)";
+constexpr auto FRAG_CODE = R"(
+#version 300 es
+precision mediump float;
+
+in vec4 color;
+
+out vec4 frag_color;
+
+void main()
+{
+    frag_color = color;
+}
+)";
+
 Renderer::Renderer(android_app *app) {
     if (!app || !app->window) {
         LOG_ERROR("Renderer received null app or window!");
@@ -58,9 +86,69 @@ Renderer::Renderer(android_app *app) {
     }
 
     LOG_INFO("EGL Initialization is completed!");
+
+    float vertices[] = {
+            0.0f, 0.5f, 1.0, 0.0, 0.0,
+            -0.5f, -0.5f, 0.0, 1.0, 0.0,
+            0.5f, -0.5f, 0.0, 0.0, 1.0
+    };
+
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5*sizeof(float), nullptr);
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)(2*sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    auto compile_shader = [](GLenum type, const char* src) -> GLuint {
+        GLuint shader = glCreateShader(type);
+        glShaderSource(shader, 1, &src, nullptr);
+        glCompileShader(shader);
+
+        GLint success;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+        if(!success)
+        {
+            char info_log[1024];
+            glGetShaderInfoLog(shader, 1024, nullptr, info_log);
+            LOG_ERROR("Failed to compile the shader code: %s", info_log);
+        }
+
+        return shader;
+    };
+
+    GLuint vert = compile_shader(GL_VERTEX_SHADER, VERT_CODE);
+    GLuint frag = compile_shader(GL_FRAGMENT_SHADER, FRAG_CODE);
+
+    program = glCreateProgram();
+    glAttachShader(program, vert);
+    glAttachShader(program, frag);
+    glLinkProgram(program);
+    GLint success;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if(!success)
+    {
+        char info_log[1024];
+        glGetProgramInfoLog(program, 1024, nullptr, info_log);
+        LOG_ERROR("Failed to compile the link shader: %s", info_log);
+    }
+
+    glDeleteShader(vert);
+    glDeleteShader(frag);
+
 }
 
 Renderer::~Renderer() {
+    glDeleteProgram(program);
+    glDeleteBuffers(1, &vbo);
+    glDeleteVertexArrays(1, &vao);
+
     if (display != EGL_NO_DISPLAY) {
         if (context != EGL_NO_CONTEXT)
             eglDestroyContext(display, context);
@@ -84,6 +172,10 @@ void Renderer::Do_Frame() {
     glViewport(0, 0, width, height);
     glClearColor(1.f, 1.f, 0.f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT);
+
+    glUseProgram(program);
+    glBindVertexArray(vao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
 
     auto res = eglSwapBuffers(display, surface);
     assert(res);
