@@ -34,27 +34,35 @@ extern "C"
         }
     }
 
-    void android_main(android_app *app)
+    void android_main(android_app* app)
     {
         app->onAppCmd = on_app_cmd;
 
-        android_poll_source *pollSource;
         int events;
+        android_poll_source* source;
 
-        do{
-            if(ALooper_pollOnce(0, nullptr, &events, (void**)&pollSource) >= 0)
-            {
-                if(pollSource)
-                {
-                    pollSource->process(app, pollSource);
+        // Wait for window to be ready
+        while (!app->window) {
+            if (ALooper_pollOnce(-1, nullptr, &events, (void**)&source) >= 0) {
+                if (source) {
+                    source->process(app, source);
+                }
+            }
+        }
+
+        // Main loop
+        while (!app->destroyRequested) {
+            while (ALooper_pollOnce(0, nullptr, &events, (void**)&source) >= 0) {
+                if (source) {
+                    source->process(app, source);
                 }
             }
 
-            if(!app->userData) continue;
-            Renderer* renderer = (Renderer *)app->userData;
-            renderer->Do_Frame();
-
-        } while(!app->destroyRequested);
+            // Only run the frame loop after renderer is ready
+            if (app->userData) {
+                auto* renderer = (Renderer*)app->userData;
+                renderer->Do_Frame();
+            }
+        }
     }
-
 }

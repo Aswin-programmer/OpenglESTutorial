@@ -12,9 +12,12 @@ layout (location = 1) in vec3 aColor;
 
 out vec4 color;
 
+uniform mat4 projection;
+uniform mat4 model;
+
 void main()
 {
-    gl_Position = vec4(aPos, 0.0, 1.0f);
+    gl_Position = projection * model * vec4(aPos, 0.0, 1.0f);
     color = vec4(aColor, 1.0);
 }
 )";
@@ -26,13 +29,18 @@ in vec4 color;
 
 out vec4 frag_color;
 
+uniform vec3 uniform_color;
+
 void main()
 {
-    frag_color = color;
+    frag_color = vec4(uniform_color, 1.0);
 }
 )";
 
-Renderer::Renderer(android_app *app) {
+Renderer::Renderer(android_app *app)
+    :
+        color_test{COLOR(1, 1, 1)}
+{
     if (!app || !app->window) {
         LOG_ERROR("Renderer received null app or window!");
         return;
@@ -87,18 +95,33 @@ Renderer::Renderer(android_app *app) {
 
     LOG_INFO("EGL Initialization is completed!");
 
+    // Vertex format: x, y, r, g, b
     float vertices[] = {
-            0.0f, 0.5f, 1.0, 0.0, 0.0,
-            -0.5f, -0.5f, 0.0, 1.0, 0.0,
-            0.5f, -0.5f, 0.0, 0.0, 1.0
+            // x, y, r, g, b
+            128.0f, 128.0f, 1.0f, 0.0f, 0.0f, // top-left
+            256.0f, 128.0f, 0.0f, 1.0f, 0.0f, // top-right
+            256.0f, 256.0f, 0.0f, 0.0f, 1.0f, // bottom-right
+            128.0f, 256.0f, 1.0f, 1.0f, 0.0f  // bottom-left
     };
 
+    unsigned int indices[] = {
+            0, 1, 2,   // First triangle (top-right)
+            2, 3, 0    // Second triangle (bottom-left)
+    };
+
+    // VAO
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    // VBO
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
+    // EBO
+    glGenBuffers(1, &ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5*sizeof(float), nullptr);
     glEnableVertexAttribArray(0);
@@ -142,11 +165,17 @@ Renderer::Renderer(android_app *app) {
     glDeleteShader(vert);
     glDeleteShader(frag);
 
+    glUseProgram(program);
+    glUniform3f(glGetUniformLocation(program, "uniform_color"), color_test.r, color_test.g, color_test.b);
+
+    projection_location = glGetUniformLocation(program, "projection");
+    model_location = glGetUniformLocation(program, "model");
 }
 
 Renderer::~Renderer() {
     glDeleteProgram(program);
     glDeleteBuffers(1, &vbo);
+    glDeleteBuffers(1, &ebo);
     glDeleteVertexArrays(1, &vao);
 
     if (display != EGL_NO_DISPLAY) {
@@ -174,8 +203,36 @@ void Renderer::Do_Frame() {
     glClear(GL_COLOR_BUFFER_BIT);
 
     glUseProgram(program);
+
+    float screenPortWidth = 1280;
+    float screenPortHeight = 720;
+    glm::mat4 projection = glm::ortho(
+                0.0f,
+                screenPortWidth,
+                screenPortHeight,
+                0.0f,
+                -1.0f,
+                +1.0f
+            );
+    glUniformMatrix4fv(projection_location, 1, GL_FALSE, glm::value_ptr(projection));
+
+    glm::mat4 model = glm::mat4(1.0f);
+    const float centerX = 192.0f;
+    const float centerY = 192.0f;
+
+    auto now = std::chrono::high_resolution_clock::now();
+    double timeInSeconds = std::chrono::duration<double>(now.time_since_epoch()).count();
+    float angle = glm::radians((float)fmod(timeInSeconds * 90.0, 360.0)); // slower rotation
+
+    model = glm::translate(model, glm::vec3(centerX, centerY, 0.0f));   // Move to center
+    model = glm::rotate(model, angle, glm::vec3(0.0f, 0.0f, 1.0f));     // Rotate
+    model = glm::translate(model, glm::vec3(-centerX, -centerY, 0.0f)); // Move back
+    glUniformMatrix4fv(model_location, 1, GL_FALSE, glm::value_ptr(model));
+
+    glUniform3f(glGetUniformLocation(program, "uniform_color"), 0, color_test.g, 0);
+
     glBindVertexArray(vao);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
     auto res = eglSwapBuffers(display, surface);
     assert(res);

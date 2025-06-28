@@ -15,6 +15,9 @@ add_library(myapplication SHARED
 # Searches for a package provided by the game activity dependency
 find_package(game-activity REQUIRED CONFIG)
 
+# DEPENDENCIES
+add_subdirectory(DEPENDENCIES/GLM)
+
 # Configure libraries CMake uses to link your target library.
 target_link_libraries(myapplication
     # The game activity
@@ -26,4 +29,6 @@ target_link_libraries(myapplication
     GLESv3
     jnigraphics
     android
-    log)
+    log
+        glm
+)
